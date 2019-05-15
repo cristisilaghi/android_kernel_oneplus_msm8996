@@ -38,6 +38,7 @@
 #include <sound/soc-dapm.h>
 #include <sound/tlv.h>
 #include <sound/info.h>
+#include <sound/sounddebug.h>
 #include "wcd9335.h"
 #include "wcd-mbhc-v2.h"
 #include "wcd9xxx-common-v2.h"
@@ -189,7 +190,7 @@ MODULE_PARM_DESC(sido_buck_svs_voltage,
 
 #define TASHA_TX_UNMUTE_DELAY_MS	25
 
-static int tx_unmute_delay = TASHA_TX_UNMUTE_DELAY_MS;
+static u32 tx_unmute_delay = TASHA_TX_UNMUTE_DELAY_MS;
 module_param(tx_unmute_delay, int,
 		S_IRUGO | S_IWUSR | S_IWGRP);
 MODULE_PARM_DESC(tx_unmute_delay, "delay to unmute the tx path");
@@ -850,6 +851,35 @@ static const struct tasha_reg_mask_val tasha_spkr_mode1[] = {
 	{WCD9335_CDC_BOOST0_BOOST_CTL, 0x7C, 0x44},
 	{WCD9335_CDC_BOOST1_BOOST_CTL, 0x7C, 0x44},
 };
+
+enum
+{
+	NO_DEVICE	= 0,
+	HS_WITH_MIC	= 1,
+	HS_WITHOUT_MIC = 2,
+};
+
+struct tasha_priv *priv_headset_type;
+
+static ssize_t wcd9xxx_print_name(struct switch_dev *sdev, char *buf)
+{
+	switch (switch_get_state(sdev))
+	{
+		case NO_DEVICE:
+			return sprintf(buf, "No Device\n");
+		case HS_WITH_MIC:
+            if(priv_headset_type->mbhc.mbhc_cfg->headset_type == 1) {
+		        return sprintf(buf, "American Headset\n");
+            } else {
+                return sprintf(buf, "Headset\n");
+            }
+
+		case HS_WITHOUT_MIC:
+			return sprintf(buf, "Handset\n");
+
+	}
+	return -EINVAL;
+}
 
 /**
  * tasha_set_spkr_gain_offset - offset the speaker path
@@ -5831,6 +5861,7 @@ static int tasha_codec_enable_dec(struct snd_soc_dapm_widget *w,
 	char *dec;
 	u8 hpf_cut_off_freq;
 	struct tasha_priv *tasha = snd_soc_codec_get_drvdata(codec);
+	struct wcd9xxx_pdata *pdata = dev_get_platdata(codec->dev->parent);
 
 	dev_dbg(codec->dev, "%s %d\n", __func__, event);
 
@@ -5923,6 +5954,9 @@ static int tasha_codec_enable_dec(struct snd_soc_dapm_widget *w,
 			snd_soc_write(codec, WCD9335_MBHC_ZDET_RAMP_CTL, 0x83);
 			snd_soc_write(codec, WCD9335_MBHC_ZDET_RAMP_CTL, 0x03);
 		}
+		if (pdata->mic_unmute_delay)
+			tx_unmute_delay = pdata->mic_unmute_delay;
+
 		/* schedule work queue to Remove Mute */
 		schedule_delayed_work(&tasha->tx_mute_dwork[decimator].dwork,
 				      msecs_to_jiffies(tx_unmute_delay));
@@ -5994,8 +6028,14 @@ static u32 tasha_get_dmic_sample_rate(struct snd_soc_codec *codec,
 	if (dec_found == true && adc_mux_index <= 8) {
 		tx_fs_reg = WCD9335_CDC_TX0_TX_PATH_CTL + (16 * adc_mux_index);
 		tx_stream_fs = snd_soc_read(codec, tx_fs_reg) & 0x0F;
-		dmic_fs = tx_stream_fs <= 4 ? WCD9XXX_DMIC_SAMPLE_RATE_2P4MHZ :
-					WCD9XXX_DMIC_SAMPLE_RATE_4P8MHZ;
+		if (tx_stream_fs <= 4)  {
+			if (pdata->dmic_sample_rate <=
+					WCD9XXX_DMIC_SAMPLE_RATE_2P4MHZ)
+				dmic_fs = pdata->dmic_sample_rate;
+			else
+				dmic_fs = WCD9XXX_DMIC_SAMPLE_RATE_2P4MHZ;
+		} else
+			dmic_fs = WCD9XXX_DMIC_SAMPLE_RATE_4P8MHZ;
 
 		/*
 		 * Check for ECPP path selection and DEC1 not connected to
@@ -11478,10 +11518,10 @@ static int tasha_set_decimator_rate(struct snd_soc_dai *dai,
 	struct tasha_priv *tasha = snd_soc_codec_get_drvdata(codec);
 	u32 tx_port;
 	u8 shift, shift_val, tx_mux_sel;
-	int decimator = -1;
 	u16 tx_port_reg, tx_fs_reg;
 
 	list_for_each_entry(ch, &tasha->dai[dai->id].wcd9xxx_ch_list, list) {
+		int decimator = -1;
 		tx_port = ch->port;
 		dev_dbg(codec->dev, "%s: dai->id = %d, tx_port = %d",
 			__func__, dai->id, tx_port);
@@ -13840,6 +13880,14 @@ static int tasha_codec_probe(struct snd_soc_codec *codec)
 		goto err_hwdep;
 	}
 
+		tasha->mbhc.wcd9xxx_sdev.name= "h2w";
+		tasha->mbhc.wcd9xxx_sdev.print_name = wcd9xxx_print_name;
+		ret = switch_dev_register(&tasha->mbhc.wcd9xxx_sdev);
+		if (ret)
+		{
+			goto err_switch_dev_register;
+		}
+
 	ptr = devm_kzalloc(codec->dev, (sizeof(tasha_rx_chs) +
 			   sizeof(tasha_tx_chs)), GFP_KERNEL);
 	if (!ptr) {
@@ -13931,10 +13979,15 @@ static int tasha_codec_probe(struct snd_soc_codec *codec)
 	mutex_unlock(&codec->mutex);
 	snd_soc_dapm_sync(dapm);
 
+
+   priv_headset_type = tasha;
+
 	return ret;
 
 err_pdata:
 	devm_kfree(codec->dev, ptr);
+	switch_dev_unregister(&tasha->mbhc.wcd9xxx_sdev);
+	err_switch_dev_register:
 err_hwdep:
 	devm_kfree(codec->dev, tasha->fw_data);
 err:

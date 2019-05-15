@@ -416,6 +416,8 @@ int ipa3_copy_ul_filter_rule_to_ipa(struct ipa_install_fltr_rule_req_msg_v01
 {
 	int i, j;
 
+	/* prevent multi-threads accessing rmnet_ipa3_ctx->num_q6_rules */
+	mutex_lock(&rmnet_ipa3_ctx->add_mux_channel_lock);
 	if (rule_req->filter_spec_ex_list_valid == true) {
 		rmnet_ipa3_ctx->num_q6_rules =
 			rule_req->filter_spec_ex_list_len;
@@ -424,6 +426,8 @@ int ipa3_copy_ul_filter_rule_to_ipa(struct ipa_install_fltr_rule_req_msg_v01
 	} else {
 		rmnet_ipa3_ctx->num_q6_rules = 0;
 		IPAWANERR("got no UL rules from modem\n");
+		mutex_unlock(&rmnet_ipa3_ctx->
+					add_mux_channel_lock);
 		return -EINVAL;
 	}
 
@@ -626,9 +630,13 @@ failure:
 	rmnet_ipa3_ctx->num_q6_rules = 0;
 	memset(ipa3_qmi_ctx->q6_ul_filter_rule, 0,
 		sizeof(ipa3_qmi_ctx->q6_ul_filter_rule));
+	mutex_unlock(&rmnet_ipa3_ctx->
+		add_mux_channel_lock);
 	return -EINVAL;
 
 success:
+	mutex_unlock(&rmnet_ipa3_ctx->
+		add_mux_channel_lock);
 	return 0;
 }
 
@@ -695,6 +703,11 @@ static int ipa3_wwan_add_ul_flt_rule_to_ipa(void)
 	/* send ipa_fltr_installed_notif_req_msg_v01 to Q6*/
 	req->source_pipe_index =
 		ipa3_get_ep_mapping(IPA_CLIENT_APPS_WAN_PROD);
+	if (req->source_pipe_index == IPA_EP_NOT_ALLOCATED) {
+		IPAWANERR("ep mapping failed\n");
+		retval = -EFAULT;
+	}
+
 	req->install_status = QMI_RESULT_SUCCESS_V01;
 	req->rule_id_valid = 1;
 	req->rule_id_len = rmnet_ipa3_ctx->num_q6_rules;
@@ -1114,7 +1127,8 @@ send:
 		memset(&meta, 0, sizeof(meta));
 		meta.pkt_init_dst_ep_valid = true;
 		meta.pkt_init_dst_ep_remote = true;
-		meta.pkt_init_dst_ep = IPA_CLIENT_Q6_LAN_CONS;
+		meta.pkt_init_dst_ep =
+			ipa3_get_ep_mapping(IPA_CLIENT_Q6_WAN_CONS);
 		ret = ipa3_tx_dp(IPA_CLIENT_APPS_WAN_PROD, skb, &meta);
 	} else {
 		ret = ipa3_tx_dp(IPA_CLIENT_APPS_WAN_PROD, skb, NULL);
@@ -1318,8 +1332,13 @@ static int handle3_egress_format(struct net_device *dev,
 
 	if (rmnet_ipa3_ctx->num_q6_rules != 0) {
 		/* already got Q6 UL filter rules*/
-		if (ipa3_qmi_ctx->modem_cfg_emb_pipe_flt == false)
+		if (ipa3_qmi_ctx->modem_cfg_emb_pipe_flt == false) {
+			/* prevent multi-threads accessing num_q6_rules */
+			mutex_lock(&rmnet_ipa3_ctx->add_mux_channel_lock);
 			rc = ipa3_wwan_add_ul_flt_rule_to_ipa();
+			mutex_unlock(&rmnet_ipa3_ctx->
+				add_mux_channel_lock);
+		}
 		if (rc)
 			IPAWANERR("install UL rules failed\n");
 		else
@@ -1910,7 +1929,9 @@ void ipa3_q6_deinitialize_rm(void)
 	if (ret < 0)
 		IPAWANERR("Error deleting resource %d, ret=%d\n",
 			IPA_RM_RESOURCE_Q6_PROD, ret);
-	destroy_workqueue(rmnet_ipa3_ctx->rm_q6_wq);
+
+	if (rmnet_ipa3_ctx->rm_q6_wq)
+		destroy_workqueue(rmnet_ipa3_ctx->rm_q6_wq);
 }
 
 static void ipa3_wake_tx_queue(struct work_struct *work)
@@ -2224,7 +2245,10 @@ timer_init_err:
 		IPAWANERR("Error deleting resource %d, ret=%d\n",
 		IPA_RM_RESOURCE_WWAN_0_PROD, ret);
 create_rsrc_err:
-	ipa3_q6_deinitialize_rm();
+
+	if (!atomic_read(&rmnet_ipa3_ctx->is_ssr))
+		ipa3_q6_deinitialize_rm();
+
 q6_init_err:
 	free_netdev(dev);
 	rmnet_ipa3_ctx->wwan_priv = NULL;
@@ -2632,6 +2656,9 @@ int rmnet_ipa3_set_data_quota(struct wan_ioctl_set_data_quota *data)
 	u32 mux_id;
 	int index;
 	struct ipa_set_data_usage_quota_req_msg_v01 req;
+
+	/* prevent string buffer overflows */
+	data->interface_name[IFNAMSIZ-1] = '\0';
 
 	index = find_vchannel_name_index(data->interface_name);
 	IPAWANERR("iface name %s, quota %lu\n",
@@ -3392,13 +3419,19 @@ int rmnet_ipa3_query_per_client_stats(
 				&& i < IPA_MAX_NUM_HW_PATH_CLIENTS; i++) {
 			/* Subtract the header bytes from the DL bytes. */
 			data->client_info[i].ipv4_rx_bytes =
-			resp->per_client_stats_list[i].num_dl_ipv4_bytes;
+			(resp->per_client_stats_list[i].num_dl_ipv4_bytes) -
+			(rmnet_ipa3_ctx->
+			tether_device[data->device_type].hdr_len *
+			resp->per_client_stats_list[i].num_dl_ipv4_pkts);
 			/* UL header bytes are subtracted by Q6. */
 			data->client_info[i].ipv4_tx_bytes =
 			resp->per_client_stats_list[i].num_ul_ipv4_bytes;
 			/* Subtract the header bytes from the DL bytes. */
 			data->client_info[i].ipv6_rx_bytes =
-			resp->per_client_stats_list[i].num_dl_ipv6_bytes;
+			(resp->per_client_stats_list[i].num_dl_ipv6_bytes) -
+			(rmnet_ipa3_ctx->
+			tether_device[data->device_type].hdr_len *
+			resp->per_client_stats_list[i].num_dl_ipv6_pkts);
 			/* UL header bytes are subtracted by Q6. */
 			data->client_info[i].ipv6_tx_bytes =
 			resp->per_client_stats_list[i].num_ul_ipv6_bytes;

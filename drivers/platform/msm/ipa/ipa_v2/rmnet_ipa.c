@@ -398,12 +398,15 @@ int copy_ul_filter_rule_to_ipa(struct ipa_install_fltr_rule_req_msg_v01
 {
 	int i, j;
 
+	/* prevent multi-threads accessing num_q6_rule */
+	mutex_lock(&add_mux_channel_lock);
 	if (rule_req->filter_spec_list_valid == true) {
 		num_q6_rule = rule_req->filter_spec_list_len;
 		IPAWANDBG("Received (%d) install_flt_req\n", num_q6_rule);
 	} else {
 		num_q6_rule = 0;
 		IPAWANERR("got no UL rules from modem\n");
+		mutex_unlock(&add_mux_channel_lock);
 		return -EINVAL;
 	}
 
@@ -597,9 +600,11 @@ failure:
 	num_q6_rule = 0;
 	memset(ipa_qmi_ctx->q6_ul_filter_rule, 0,
 		sizeof(ipa_qmi_ctx->q6_ul_filter_rule));
+	mutex_unlock(&add_mux_channel_lock);
 	return -EINVAL;
 
 success:
+	mutex_unlock(&add_mux_channel_lock);
 	return 0;
 }
 
@@ -1504,9 +1509,12 @@ static int ipa_wwan_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 				/* already got Q6 UL filter rules*/
 				if (ipa_qmi_ctx &&
 					ipa_qmi_ctx->modem_cfg_emb_pipe_flt
-					== false)
+					== false) {
+					/* protect num_q6_rule */
+					mutex_lock(&add_mux_channel_lock);
 					rc = wwan_add_ul_flt_rule_to_ipa();
-				else
+					mutex_unlock(&add_mux_channel_lock);
+				} else
 					rc = 0;
 				egress_set = true;
 				if (rc)
@@ -1828,7 +1836,9 @@ void q6_deinitialize_rm(void)
 	if (ret < 0)
 		IPAWANERR("Error deleting resource %d, ret=%d\n",
 			IPA_RM_RESOURCE_Q6_PROD, ret);
-	destroy_workqueue(ipa_rm_q6_workqueue);
+
+	if (ipa_rm_q6_workqueue)
+		destroy_workqueue(ipa_rm_q6_workqueue);
 }
 
 static void wake_tx_queue(struct work_struct *work)
@@ -2108,7 +2118,10 @@ timer_init_err:
 		IPAWANERR("Error deleting resource %d, ret=%d\n",
 		IPA_RM_RESOURCE_WWAN_0_PROD, ret);
 create_rsrc_err:
-	q6_deinitialize_rm();
+
+	if (!atomic_read(&is_ssr))
+		q6_deinitialize_rm();
+
 q6_init_err:
 	free_netdev(ipa_netdevs[0]);
 	ipa_netdevs[0] = NULL;
@@ -2484,6 +2497,9 @@ int rmnet_ipa_set_data_quota(struct wan_ioctl_set_data_quota *data)
 	u32 mux_id;
 	int index;
 	struct ipa_set_data_usage_quota_req_msg_v01 req;
+
+	/* prevent string buffer overflows */
+	data->interface_name[IFNAMSIZ-1] = '\0';
 
 	index = find_vchannel_name_index(data->interface_name);
 	IPAWANERR("iface name %s, quota %lu\n",

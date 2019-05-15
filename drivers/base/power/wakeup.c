@@ -452,6 +452,10 @@ static void wakeup_source_report_event(struct wakeup_source *ws)
 
 	if (!ws->active)
 		wakeup_source_activate(ws);
+	if (!strcmp(ws->name, "tasha-slim-pgd")) {
+		dump_stack();
+		pr_err("wake_lock tasha-slim-pgd %lu\n", ws->active_count);
+	}
 }
 
 /**
@@ -527,6 +531,10 @@ static void wakeup_source_deactivate(struct wakeup_source *ws)
 	ktime_t now;
 
 	ws->relax_count++;
+	if (!strcmp(ws->name, "tasha-slim-pgd")) {
+		dump_stack();
+		pr_err("wakeup_unlock tasha-slim-pgd %lu\n", ws->relax_count);
+	}
 	/*
 	 * __pm_relax() may be called directly or from a timer function.
 	 * If it is called directly right after the timer function has been
@@ -926,7 +934,7 @@ static int print_wakeup_source_stats(struct seq_file *m,
 		active_time = ktime_set(0, 0);
 	}
 
-	ret = seq_printf(m, "%-12s\t%lu\t\t%lu\t\t%lu\t\t%lu\t\t"
+	ret = seq_printf(m, "%-32s\t%lu\t\t%lu\t\t%lu\t\t%lu\t\t"
 			"%lld\t\t%lld\t\t%lld\t\t%lld\t\t%lld\n",
 			ws->name, active_count, ws->event_count,
 			ws->wakeup_count, ws->expire_count,
@@ -947,7 +955,7 @@ static int wakeup_sources_stats_show(struct seq_file *m, void *unused)
 {
 	struct wakeup_source *ws;
 
-	seq_puts(m, "name\t\tactive_count\tevent_count\twakeup_count\t"
+	seq_puts(m, "name\t\t\t\t\tactive_count\tevent_count\twakeup_count\t"
 		"expire_count\tactive_since\ttotal_time\tmax_time\t"
 		"last_change\tprevent_suspend_time\n");
 

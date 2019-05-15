@@ -295,23 +295,29 @@ static int do_maps_open(struct inode *inode, struct file *file,
 				sizeof(struct proc_maps_private));
 }
 
-static pid_t pid_of_stack(struct proc_maps_private *priv,
-				struct vm_area_struct *vma, bool is_pid)
+/*
+ * Indicate if the VMA is a stack for the given task; for
+ * /proc/PID/maps that is the stack of the main task.
+ */
+static int is_stack(struct proc_maps_private *priv,
+                   struct vm_area_struct *vma, int is_pid)
 {
-	struct inode *inode = priv->inode;
-	struct task_struct *task;
-	pid_t ret = 0;
+	int stack = 0;
 
-	rcu_read_lock();
-	task = pid_task(proc_pid(inode), PIDTYPE_PID);
-	if (task) {
-		task = task_of_stack(task, vma, is_pid);
+	if (is_pid) {
+		stack = vma->vm_start <= vma->vm_mm->start_stack &&
+			vma->vm_end >= vma->vm_mm->start_stack;
+	} else {
+		struct inode *inode = priv->inode;
+		struct task_struct *task;
+
+		rcu_read_lock();
+		task = pid_task(proc_pid(inode), PIDTYPE_PID);
 		if (task)
-			ret = task_pid_nr_ns(task, inode->i_sb->s_fs_info);
+			stack = vma_is_stack_for_task(vma, task);
+		rcu_read_unlock();
 	}
-	rcu_read_unlock();
-
-	return ret;
+	return stack;
 }
 
 static void
@@ -336,11 +342,7 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
 
 	/* We don't show the stack guard page in /proc/maps */
 	start = vma->vm_start;
-	if (stack_guard_page_start(vma, start))
-		start += PAGE_SIZE;
 	end = vma->vm_end;
-	if (stack_guard_page_end(vma, end))
-		end -= PAGE_SIZE;
 
 	seq_setwidth(m, 25 + sizeof(void *) * 6 - 1);
 	seq_printf(m, "%08lx-%08lx %c%c%c%c %08llx %02x:%02x %lu ",
@@ -371,8 +373,6 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
 
 	name = arch_vma_name(vma);
 	if (!name) {
-		pid_t tid;
-
 		if (!mm) {
 			name = "[vdso]";
 			goto done;
@@ -384,20 +384,8 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
 			goto done;
 		}
 
-		tid = pid_of_stack(priv, vma, is_pid);
-		if (tid != 0) {
-			/*
-			 * Thread stack in /proc/PID/task/TID/maps or
-			 * the main process stack.
-			 */
-			if (!is_pid || (vma->vm_start <= mm->start_stack &&
-			    vma->vm_end >= mm->start_stack)) {
-				name = "[stack]";
-			} else {
-				/* Thread stack in /proc/PID/maps */
-				seq_pad(m, ' ');
-				seq_printf(m, "[stack:%d]", tid);
-			}
+		if (is_stack(priv, vma, is_pid)) {
+			name = "[stack]";
 			goto done;
 		}
 
@@ -701,9 +689,72 @@ static int show_smap(struct seq_file *m, void *v, int is_pid)
 	/* mmap_sem is held in m_start */
 	if (vma->vm_mm && !is_vm_hugetlb_page(vma))
 		walk_page_range(vma->vm_start, vma->vm_end, &smaps_walk);
+    if (strcmp(current->comm, "android.bg") == 0) {
+        if ((unsigned long)(mss.pss >> (10 + PSS_SHIFT)) > 0) {
+            seq_printf(m,
+            "Pss:            %8lu kB\n",
+            (unsigned long)(mss.pss >> (10 + PSS_SHIFT)));
+        }
+        if ((mss.private_clean >> 10) > 0) {
+            seq_printf(m,
+            "Private_Clean:  %8lu kB\n",
+            mss.private_clean >> 10);
+        }
+        if ((mss.private_dirty >> 10) > 0) {
+            seq_printf(m,
+            "Private_Dirty:  %8lu kB\n",
+            mss.private_dirty >> 10);
+        }
+        if ((unsigned long)(mss.swap_pss >> (10 + PSS_SHIFT)) > 0) {
+            seq_printf(m,
+            "SwapPss:        %8lu kB\n",
+            (unsigned long)(mss.swap_pss >> (10 + PSS_SHIFT)));
+        }
+        m_cache_vma(m, vma);
+        return 0;
+    }
+	if (strcmp(current->comm, "system_server") == 0) {
+		if ((unsigned long)(mss.pss >> (10 + PSS_SHIFT)) > 0) {
+			seq_printf(m,
+			"Pss:			 %8lu kB\n",
+			(unsigned long)(mss.pss >> (10 + PSS_SHIFT)));
+		}
+		if ((mss.private_clean >> 10) > 0) {
+			seq_printf(m,
+			"Private_Clean:  %8lu kB\n",
+			mss.private_clean >> 10);
+		}
+		if ((mss.private_dirty >> 10) > 0) {
+			seq_printf(m,
+			"Private_Dirty:  %8lu kB\n",
+			mss.private_dirty >> 10);
+		}
+		if ((unsigned long)(mss.swap_pss >> (10 + PSS_SHIFT)) > 0) {
+			seq_printf(m,
+			"SwapPss:		 %8lu kB\n",
+			(unsigned long)(mss.swap_pss >> (10 + PSS_SHIFT)));
+		}
+		if ((unsigned long)(mss.shared_clean >>10 ) > 0) {
+			seq_printf(m,
+			"Shared_Clean:		  %8lu kB\n",
+			(unsigned long)(mss.shared_clean >> 10 ) );
+		}
+		if ((unsigned long)(mss.shared_dirty >> 10) > 0) {
+			seq_printf(m,
+			"Shared_Dirty:		  %8lu kB\n",
+			(unsigned long)(mss.shared_dirty >>10));
+		}
+	
+	   if ((unsigned long)(mss.swap >> 10) > 0) {
+			seq_printf(m,
+			"Swap:		  %8lu kB\n",
+			(unsigned long)(mss.swap >> 10) );
+		}
+		m_cache_vma(m, vma);
+		return 0;
+	}
 
 	show_map_vma(m, vma, is_pid);
-
 	if (vma_get_anon_name(vma)) {
 		seq_puts(m, "Name:           ");
 		seq_print_vma_name(m, vma);
@@ -1841,19 +1892,8 @@ static int show_numa_map(struct seq_file *m, void *v, int is_pid)
 		seq_path(m, &file->f_path, "\n\t= ");
 	} else if (vma->vm_start <= mm->brk && vma->vm_end >= mm->start_brk) {
 		seq_puts(m, " heap");
-	} else {
-		pid_t tid = pid_of_stack(proc_priv, vma, is_pid);
-		if (tid != 0) {
-			/*
-			 * Thread stack in /proc/PID/task/TID/maps or
-			 * the main process stack.
-			 */
-			if (!is_pid || (vma->vm_start <= mm->start_stack &&
-			    vma->vm_end >= mm->start_stack))
-				seq_puts(m, " stack");
-			else
-				seq_printf(m, " stack:%d", tid);
-		}
+	} else if (is_stack(proc_priv, vma, is_pid)) {
+		seq_puts(m, " stack");
 	}
 
 	if (is_vm_hugetlb_page(vma))

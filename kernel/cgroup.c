@@ -2326,6 +2326,7 @@ static int cgroup_attach_task(struct cgroup *dst_cgrp,
 	cgroup_migrate_finish(&preloaded_csets);
 	return ret;
 }
+
 int subsys_cgroup_allow_attach(struct cgroup_subsys_state *css, struct cgroup_taskset *tset)
 {
 	const struct cred *cred = current_cred(), *tcred;
@@ -2381,9 +2382,11 @@ retry_find_task:
 		 */
 		tcred = __task_cred(tsk);
 		if (!uid_eq(cred->euid, GLOBAL_ROOT_UID) &&
+            !uid_eq(cred->euid, GLOBAL_SYSTEM_UID) &&
+
 		    !uid_eq(cred->euid, tcred->uid) &&
 		    !uid_eq(cred->euid, tcred->suid) &&
-		    !ns_capable(tcred->user_ns, CAP_SYS_RESOURCE)) {
+		    !ns_capable(tcred->user_ns, CAP_SYS_NICE)) {
 			rcu_read_unlock();
 			ret = -EACCES;
 			goto out_unlock_cgroup;

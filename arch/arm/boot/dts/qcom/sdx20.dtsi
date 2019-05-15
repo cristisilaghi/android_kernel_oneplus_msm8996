@@ -90,6 +90,12 @@
 		/delete-property/qcom,use-rg10-limitation-mitigation;
 	};
 
+	qcom,ipa_fws {
+		compatible = "qcom,pil-tz-generic";
+		qcom,pas-id = <0xf>;
+		qcom,firmware-name = "ipa_fws";
+	};
+
 	qcom,msm-cpufreq {
 		qcom,cpufreq-table =
 			<  307200 >,
@@ -98,7 +104,7 @@
 			< 1401600 >;
 	};
 
-	usb_detect {
+	usb_detect: qcom,gpio-usbdetect {
 		compatible = "qcom,gpio-usbdetect";
 		interrupt-parent = <&spmi_bus>;
 		interrupts = <0x0 0x0d 0x0>;
@@ -342,8 +348,13 @@
 	wake-gpio = <&tlmm_pinmux 58 0>;
 	clkreq-gpio = <&tlmm_pinmux 60 0>;
 
+	vreg-1.8-supply = <&pmd9650_l1>;
+	qcom,vreg-1.8-voltage-level = <1224000 1224000 0>;
+
 	qcom,pcie-phy-ver = <5>;
 	qcom,pcie-perst-enum;
+	qcom,pcie-mhi-a7-irq;
+	status = "disabled";
 };
 
 &cnss_pcie {
@@ -382,8 +393,13 @@
 	interrupts = <0 119 0>;
 	interrupt-names = "mhi-device-inta";
 	qcom,mhi-ifc-id = <0x030317cb>;
+	qcom,mhi-interrupt;
+	status = "disabled";
 };
 
 #include "sdx20-usb.dtsi"
 #include "sdx20-pm.dtsi"
 
+&usb3 {
+	vbus_dwc3-supply = <&smb1351_otg_supply>;
+};

@@ -35,10 +35,11 @@
 #define LOGDE(...) dev_err(&priv_data->spidev->dev, __VA_ARGS__)
 #define LOGNE(...) netdev_err(netdev, __VA_ARGS__)
 
-#define MAX_TX_BUFFERS		1
-#define XFER_BUFFER_SIZE	64
-#define K61_CLOCK		120000000
-#define K61_MAX_CHANNELS	1
+#define MAX_TX_BUFFERS			1
+#define XFER_BUFFER_SIZE		64
+#define K61_CLOCK			120000000
+#define K61_MAX_CHANNELS		1
+#define K61_FW_QUERY_RETRY_COUNT	3
 
 struct k61_can {
 	struct net_device	*netdev;
@@ -56,6 +57,8 @@ struct k61_can {
 	int reset;
 	int wait_cmd;
 	int cmd_result;
+	int bits_per_word;
+	int reset_delay_msec;
 };
 
 struct k61_netdev_privdata {
@@ -308,13 +311,16 @@ static int k61_do_spi_transaction(struct k61_can *priv_data)
 	xfer->tx_buf = priv_data->tx_buf;
 	xfer->rx_buf = priv_data->rx_buf;
 	xfer->len = XFER_BUFFER_SIZE;
-	xfer->bits_per_word = 16;
+	xfer->bits_per_word = priv_data->bits_per_word;
 
 	ret = spi_sync(spi, msg);
 	LOGDI("spi_sync ret %d\n", ret);
 
-	if (ret == 0)
+	if (ret == 0) {
+		devm_kfree(&spi->dev, msg);
+		devm_kfree(&spi->dev, xfer);
 		k61_process_rx(priv_data, priv_data->rx_buf);
+	}
 	return ret;
 }
 
@@ -363,7 +369,7 @@ static int k61_query_firmware_version(struct k61_can *priv_data)
 
 	if (ret == 0) {
 		wait_for_completion_interruptible_timeout(
-				&priv_data->response_completion, 0.1 * HZ);
+				&priv_data->response_completion, 0.001 * HZ);
 		ret = priv_data->cmd_result;
 	}
 
@@ -803,7 +809,7 @@ cleanup_privdata:
 
 static int k61_probe(struct spi_device *spi)
 {
-	int err;
+	int err, retry = 0, query_err = -1;
 	struct k61_can *priv_data;
 	struct device *dev;
 
@@ -824,25 +830,31 @@ static int k61_probe(struct spi_device *spi)
 	}
 	dev_dbg(dev, "k61_probe created priv_data");
 
-	priv_data->reset = of_get_named_gpio(spi->dev.of_node, "reset-gpio", 0);
-	if (!gpio_is_valid(priv_data->reset)) {
-		dev_err(&spi->dev, "Missing dt property: reset-gpio\n");
-		return -EINVAL;
-	}
-	err = gpio_request(priv_data->reset, "k61-reset");
-	if (err < 0) {
-		dev_err(&spi->dev,
-			"failed to request gpio %d: %d\n",
-			priv_data->reset, err);
-	}
+	err = of_property_read_u32(spi->dev.of_node, "bits-per-word",
+				   &priv_data->bits_per_word);
+	if (err)
+		priv_data->bits_per_word = 16;
 
-	gpio_direction_output(priv_data->reset, 0);
-	udelay(1);
-	gpio_direction_output(priv_data->reset, 1);
-	/* Provide a delay of 10us for the chip to reset. This is part of
-	 * the reset sequence.
-	 */
-	usleep_range(10, 11);
+	err = of_property_read_u32(spi->dev.of_node, "reset-delay-msec",
+				   &priv_data->reset_delay_msec);
+	if (err)
+		priv_data->reset_delay_msec = 1;
+
+	priv_data->reset = of_get_named_gpio(spi->dev.of_node, "reset-gpio", 0);
+	if (gpio_is_valid(priv_data->reset)) {
+		err = gpio_request(priv_data->reset, "k61-reset");
+		if (err < 0) {
+			dev_err(&spi->dev,
+				"failed to request gpio %d: %d\n",
+				priv_data->reset, err);
+			goto cleanup_candev;
+		}
+
+		gpio_direction_output(priv_data->reset, 0);
+		udelay(1);
+		gpio_direction_output(priv_data->reset, 1);
+		msleep(priv_data->reset_delay_msec);
+	}
 
 	err = k61_create_netdev(spi, priv_data);
 	if (err) {
@@ -865,9 +877,12 @@ static int k61_probe(struct spi_device *spi)
 	}
 	dev_dbg(dev, "Request irq %d ret %d\n", spi->irq, err);
 
-	err = k61_query_firmware_version(priv_data);
+	while ((query_err != 0) && (retry < K61_FW_QUERY_RETRY_COUNT)) {
+		query_err = k61_query_firmware_version(priv_data);
+		retry++;
+	}
 
-	if (err) {
+	if (query_err) {
 		dev_info(dev, "K61 probe failed\n");
 		err = -ENODEV;
 		goto free_irq;
@@ -901,6 +916,7 @@ static int k61_remove(struct spi_device *spi)
 
 static const struct of_device_id k61_match_table[] = {
 	{ .compatible = "fsl,k61" },
+	{ .compatible = "nxp,mpc5746c" },
 	{ }
 };
 

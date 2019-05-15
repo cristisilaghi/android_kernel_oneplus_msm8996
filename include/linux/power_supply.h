@@ -110,9 +110,26 @@ enum {
 	POWER_SUPPLY_PARALLEL_MID_MID,
 };
 
+enum {
+	POWER_SUPPLY_PL_NONE,
+	POWER_SUPPLY_PL_USBIN_USBIN,
+	POWER_SUPPLY_PL_USBIN_USBIN_EXT,
+	POWER_SUPPLY_PL_USBMID_USBMID,
+};
+
 enum power_supply_property {
 	/* Properties of type `int' */
 	POWER_SUPPLY_PROP_STATUS = 0,
+	POWER_SUPPLY_PROP_SET_ALLOW_READ_EXTERN_FG_IIC,
+	POWER_SUPPLY_PROP_CC_TO_CV_POINT,
+	POWER_SUPPLY_PROP_CHG_PROTECT_STATUS,
+	POWER_SUPPLY_PROP_FASTCHG_STATUS,
+	POWER_SUPPLY_PROP_FASTCHG_STARTING,
+	POWER_SUPPLY_PROP_UPDATE_LCD_IS_OFF,
+	POWER_SUPPLY_PROP_CHECK_USB_UNPLUG,
+	POWER_SUPPLY_PROP_SWITCH_DASH,
+	POWER_SUPPLY_PROP_BATTERY_4P4V_PRESENT,
+	POWER_SUPPLY_PROP_BATTERY_HEALTH,
 	POWER_SUPPLY_PROP_CHARGE_TYPE,
 	POWER_SUPPLY_PROP_HEALTH,
 	POWER_SUPPLY_PROP_PRESENT,
@@ -274,6 +291,7 @@ enum power_supply_type {
 	POWER_SUPPLY_TYPE_USB_HVDCP_3,	/* Efficient High Voltage DCP */
 	POWER_SUPPLY_TYPE_USB_PD,	/* Power Delivery */
 	POWER_SUPPLY_TYPE_WIRELESS,	/* Accessory Charger Adapters */
+	POWER_SUPPLY_TYPE_USB_FLOAT,	/* Floating charger */
 	POWER_SUPPLY_TYPE_BMS,		/* Battery Monitor System */
 	POWER_SUPPLY_TYPE_PARALLEL,	/* Parallel Path */
 	POWER_SUPPLY_TYPE_MAIN,		/* Main Path */
@@ -281,6 +299,7 @@ enum power_supply_type {
 	POWER_SUPPLY_TYPE_TYPEC,	/* Type-C */
 	POWER_SUPPLY_TYPE_UFP,		/* Type-C UFP */
 	POWER_SUPPLY_TYPE_DFP,		/* TYpe-C DFP */
+	POWER_SUPPLY_TYPE_DASH,
 };
 
 /* Indicates USB Type-C CC connection status */
@@ -334,6 +353,12 @@ struct power_supply {
 	size_t num_supplies;
 	struct device_node *of_node;
 
+	/*
+	 * Functions for drivers implementing power supply class.
+	 * These shouldn't be called directly by other drivers for accessing
+	 * this power supply. Instead use power_supply_*() functions (for
+	 * example power_supply_get_property()).
+	 */
 	int (*get_property)(struct power_supply *psy,
 			    enum power_supply_property psp,
 			    union power_supply_propval *val);
@@ -354,11 +379,15 @@ struct power_supply {
 	/* For APM emulation, think legacy userspace. */
 	int use_for_apm;
 
+	/* Driver private data */
+	void *drv_data;
+
 	/* private */
 	struct device *dev;
 	struct work_struct changed_work;
 	spinlock_t changed_lock;
 	bool changed;
+	atomic_t use_cnt;
 #ifdef CONFIG_THERMAL
 	struct thermal_zone_device *tzd;
 	struct thermal_cooling_device *tcd;
@@ -419,6 +448,15 @@ extern int power_supply_is_system_supplied(void);
 static inline int power_supply_is_system_supplied(void) { return -ENOSYS; }
 #endif
 
+extern int power_supply_get_property(struct power_supply *psy,
+			    enum power_supply_property psp,
+			    union power_supply_propval *val);
+extern int power_supply_set_property(struct power_supply *psy,
+			    enum power_supply_property psp,
+			    const union power_supply_propval *val);
+extern int power_supply_property_is_writeable(struct power_supply *psy,
+					enum power_supply_property psp);
+extern void power_supply_external_power_changed(struct power_supply *psy);
 extern int power_supply_register(struct device *parent,
 				 struct power_supply *psy);
 extern int power_supply_register_no_ws(struct device *parent,
@@ -443,6 +481,7 @@ extern int power_supply_set_dp_dm(struct power_supply *psy,
 							int value);
 extern int power_supply_is_system_supplied(void);
 extern int power_supply_set_scope(struct power_supply *psy, int scope);
+extern void *power_supply_get_drvdata(struct power_supply *psy);
 /* For APM emulation, think legacy userspace. */
 extern struct class *power_supply_class;
 

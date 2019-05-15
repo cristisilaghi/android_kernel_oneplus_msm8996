@@ -4502,7 +4502,8 @@ static void thermal_monitor_init(void)
 	if (vdd_rstr_enabled) {
 		if (vdd_rstr_apss_freq_dev_init())
 			pr_err("vdd APSS mitigation device init failed\n");
-		else if (!(convert_to_zone_id(&thresh[MSM_VDD_RESTRICTION])))
+
+		if (!(convert_to_zone_id(&thresh[MSM_VDD_RESTRICTION])))
 			therm_set_threshold(&thresh[MSM_VDD_RESTRICTION]);
 	}
 
@@ -4864,7 +4865,7 @@ static ssize_t __ref store_cc_enabled(struct kobject *kobj,
 		hotplug_init_cpu_offlined();
 		mutex_lock(&core_control_mutex);
 		update_offline_cores(cpus_offlined);
-		if (hotplug_enabled) {
+		if (hotplug_enabled && hotplug_task) {
 			for_each_possible_cpu(cpu) {
 				if (!(msm_thermal_info.core_control_mask &
 					BIT(cpus[cpu].cpu)))

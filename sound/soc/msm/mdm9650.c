@@ -162,6 +162,7 @@ static int mdm_enable_codec_ext_clk(struct snd_soc_codec *codec,
 
 static void *def_tasha_mbhc_cal(void);
 static void *adsp_state_notifier;
+static bool dummy_device_registered;
 
 static struct wcd_mbhc_config wcd_mbhc_cfg = {
 	.read_fw_bin = false,
@@ -701,6 +702,30 @@ static int mdm_sec_mi2s_rate_put(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
+static inline int param_is_mask(int p)
+{
+	return (p >= SNDRV_PCM_HW_PARAM_FIRST_MASK) &&
+	       (p <= SNDRV_PCM_HW_PARAM_LAST_MASK);
+}
+
+static inline struct snd_mask *param_to_mask(struct snd_pcm_hw_params *p, int n)
+{
+	return &(p->masks[n - SNDRV_PCM_HW_PARAM_FIRST_MASK]);
+}
+
+static void param_set_mask(struct snd_pcm_hw_params *p, int n, unsigned bit)
+{
+	if (bit >= SNDRV_MASK_MAX)
+		return;
+	if (param_is_mask(n)) {
+		struct snd_mask *m = param_to_mask(p, n);
+
+		m->bits[0] = 0;
+		m->bits[1] = 0;
+		m->bits[bit >> 5] |= (1 << (bit & 31));
+	}
+}
+
 static int mdm_mi2s_rx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rt,
 					      struct snd_pcm_hw_params *params)
 {
@@ -708,6 +733,8 @@ static int mdm_mi2s_rx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rt,
 						      SNDRV_PCM_HW_PARAM_RATE);
 	struct snd_interval *channels = hw_param_interval(params,
 					SNDRV_PCM_HW_PARAM_CHANNELS);
+	param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
+		       SNDRV_PCM_FORMAT_S16_LE);
 	rate->min = rate->max = mdm_mi2s_rate;
 	channels->min = channels->max = mdm_mi2s_rx_ch;
 	return 0;
@@ -720,6 +747,8 @@ static int mdm_sec_mi2s_rx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rt,
 						      SNDRV_PCM_HW_PARAM_RATE);
 	struct snd_interval *channels = hw_param_interval(params,
 					SNDRV_PCM_HW_PARAM_CHANNELS);
+	param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
+		       SNDRV_PCM_FORMAT_S16_LE);
 	rate->min = rate->max = mdm_sec_mi2s_rate;
 	channels->min = channels->max = mdm_sec_mi2s_rx_ch;
 	return 0;
@@ -732,6 +761,8 @@ static int mdm_mi2s_tx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rt,
 						      SNDRV_PCM_HW_PARAM_RATE);
 	struct snd_interval *channels = hw_param_interval(params,
 						SNDRV_PCM_HW_PARAM_CHANNELS);
+	param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
+		       SNDRV_PCM_FORMAT_S16_LE);
 	rate->min = rate->max = mdm_mi2s_rate;
 	channels->min = channels->max = mdm_mi2s_tx_ch;
 	return 0;
@@ -744,6 +775,8 @@ static int mdm_sec_mi2s_tx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rt,
 						      SNDRV_PCM_HW_PARAM_RATE);
 	struct snd_interval *channels = hw_param_interval(params,
 						SNDRV_PCM_HW_PARAM_CHANNELS);
+	param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
+		       SNDRV_PCM_FORMAT_S16_LE);
 	rate->min = rate->max = mdm_sec_mi2s_rate;
 	channels->min = channels->max = mdm_sec_mi2s_tx_ch;
 	return 0;
@@ -754,6 +787,8 @@ static int mdm_be_hw_params_fixup(struct snd_soc_pcm_runtime *rt,
 {
 	struct snd_interval *rate = hw_param_interval(params,
 						      SNDRV_PCM_HW_PARAM_RATE);
+	param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
+		       SNDRV_PCM_FORMAT_S16_LE);
 	rate->min = rate->max = MDM_MI2S_RATE;
 	return 0;
 }
@@ -2504,9 +2539,10 @@ static struct platform_driver mdm_asoc_machine_dummy_driver = {
 static int  mdm_adsp_state_callback(struct notifier_block *nb,
 					unsigned long value, void *priv)
 {
-	if (SUBSYS_AFTER_POWERUP == value) {
+	if (!dummy_device_registered && SUBSYS_AFTER_POWERUP == value) {
 		platform_driver_register(&mdm_asoc_machine_dummy_driver);
 		platform_device_register(&dummy_machine_device);
+		dummy_device_registered = true;
 	}
 
 		return NOTIFY_OK;

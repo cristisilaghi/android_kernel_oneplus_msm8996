@@ -665,6 +665,10 @@ static int _load_gpmu_firmware(struct adreno_device *adreno_dev)
 	if (ret)
 		goto err;
 
+	/* Integer overflow check for cmd_size */
+	if (data[2] > (data[0] - 2))
+		goto err;
+
 	cmds = data + data[2] + 3;
 	cmd_size = data[0] - data[2] - 2;
 
@@ -3035,6 +3039,10 @@ static unsigned int a5xx_register_offsets[ADRENO_REG_REGISTER_MAX] = {
 		ADRENO_REG_DEFINE(ADRENO_REG_RBBM_BLOCK_SW_RESET_CMD2,
 					  A5XX_RBBM_BLOCK_SW_RESET_CMD2),
 	ADRENO_REG_DEFINE(ADRENO_REG_UCHE_INVALIDATE0, A5XX_UCHE_INVALIDATE0),
+	ADRENO_REG_DEFINE(ADRENO_REG_RBBM_PERFCTR_RBBM_0_LO,
+				A5XX_RBBM_PERFCTR_RBBM_0_LO),
+	ADRENO_REG_DEFINE(ADRENO_REG_RBBM_PERFCTR_RBBM_0_HI,
+				A5XX_RBBM_PERFCTR_RBBM_0_HI),
 	ADRENO_REG_DEFINE(ADRENO_REG_RBBM_PERFCTR_LOAD_VALUE_LO,
 				A5XX_RBBM_PERFCTR_LOAD_VALUE_LO),
 	ADRENO_REG_DEFINE(ADRENO_REG_RBBM_PERFCTR_LOAD_VALUE_HI,

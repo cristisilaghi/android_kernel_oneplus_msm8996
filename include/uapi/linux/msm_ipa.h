@@ -16,64 +16,86 @@
 #define IPA_IOC_MAGIC 0xCF
 
 /**
+ * IPA device full path
+ */
+#define IPA_DEV_NAME "/dev/ipa"
+
+/**
+ * IPA NAT table character device name
+ */
+#define IPA_NAT_DEV_NAME "ipaNatTable"
+
+/**
+ * IPA IPv6CT table character device name
+ */
+#define IPA_IPV6CT_DEV_NAME "ipaIpv6CTTable"
+
+ /**
  * name of the default routing tables for v4 and v6
  */
 #define IPA_DFLT_RT_TBL_NAME "ipa_dflt_rt"
 
 /**
- *   the commands supported by IPA driver
+ * commands supported by IPA driver
  */
-#define IPA_IOCTL_ADD_HDR            0
-#define IPA_IOCTL_DEL_HDR            1
-#define IPA_IOCTL_ADD_RT_RULE        2
-#define IPA_IOCTL_DEL_RT_RULE        3
-#define IPA_IOCTL_ADD_FLT_RULE       4
-#define IPA_IOCTL_DEL_FLT_RULE       5
-#define IPA_IOCTL_COMMIT_HDR         6
-#define IPA_IOCTL_RESET_HDR          7
-#define IPA_IOCTL_COMMIT_RT          8
-#define IPA_IOCTL_RESET_RT           9
-#define IPA_IOCTL_COMMIT_FLT        10
-#define IPA_IOCTL_RESET_FLT         11
-#define IPA_IOCTL_DUMP              12
-#define IPA_IOCTL_GET_RT_TBL        13
-#define IPA_IOCTL_PUT_RT_TBL        14
-#define IPA_IOCTL_COPY_HDR          15
-#define IPA_IOCTL_QUERY_INTF        16
-#define IPA_IOCTL_QUERY_INTF_TX_PROPS 17
-#define IPA_IOCTL_QUERY_INTF_RX_PROPS 18
-#define IPA_IOCTL_GET_HDR           19
-#define IPA_IOCTL_PUT_HDR           20
-#define IPA_IOCTL_SET_FLT        21
-#define IPA_IOCTL_ALLOC_NAT_MEM  22
-#define IPA_IOCTL_V4_INIT_NAT    23
-#define IPA_IOCTL_NAT_DMA        24
-#define IPA_IOCTL_V4_DEL_NAT     26
-#define IPA_IOCTL_PULL_MSG       27
-#define IPA_IOCTL_GET_NAT_OFFSET 28
-#define IPA_IOCTL_RM_ADD_DEPENDENCY 29
-#define IPA_IOCTL_RM_DEL_DEPENDENCY 30
-#define IPA_IOCTL_GENERATE_FLT_EQ 31
-#define IPA_IOCTL_QUERY_INTF_EXT_PROPS 32
-#define IPA_IOCTL_QUERY_EP_MAPPING 33
-#define IPA_IOCTL_QUERY_RT_TBL_INDEX 34
-#define IPA_IOCTL_WRITE_QMAPID 35
-#define IPA_IOCTL_MDFY_FLT_RULE 36
-#define IPA_IOCTL_NOTIFY_WAN_UPSTREAM_ROUTE_ADD	37
-#define IPA_IOCTL_NOTIFY_WAN_UPSTREAM_ROUTE_DEL	38
-#define IPA_IOCTL_NOTIFY_WAN_EMBMS_CONNECTED	39
-#define IPA_IOCTL_ADD_HDR_PROC_CTX 40
-#define IPA_IOCTL_DEL_HDR_PROC_CTX 41
-#define IPA_IOCTL_MDFY_RT_RULE 42
-#define IPA_IOCTL_ADD_RT_RULE_AFTER 43
-#define IPA_IOCTL_ADD_FLT_RULE_AFTER 44
-#define IPA_IOCTL_GET_HW_VERSION 45
-#define IPA_IOCTL_ADD_RT_RULE_EXT 46
-#define IPA_IOCTL_ADD_VLAN_IFACE 47
-#define IPA_IOCTL_DEL_VLAN_IFACE 48
-#define IPA_IOCTL_ADD_L2TP_VLAN_MAPPING 49
-#define IPA_IOCTL_DEL_L2TP_VLAN_MAPPING 50
-#define IPA_IOCTL_MAX 51
+#define IPA_IOCTL_ADD_HDR                       0
+#define IPA_IOCTL_DEL_HDR                       1
+#define IPA_IOCTL_ADD_RT_RULE                   2
+#define IPA_IOCTL_DEL_RT_RULE                   3
+#define IPA_IOCTL_ADD_FLT_RULE                  4
+#define IPA_IOCTL_DEL_FLT_RULE                  5
+#define IPA_IOCTL_COMMIT_HDR                    6
+#define IPA_IOCTL_RESET_HDR                     7
+#define IPA_IOCTL_COMMIT_RT                     8
+#define IPA_IOCTL_RESET_RT                      9
+#define IPA_IOCTL_COMMIT_FLT                    10
+#define IPA_IOCTL_RESET_FLT                     11
+#define IPA_IOCTL_DUMP                          12
+#define IPA_IOCTL_GET_RT_TBL                    13
+#define IPA_IOCTL_PUT_RT_TBL                    14
+#define IPA_IOCTL_COPY_HDR                      15
+#define IPA_IOCTL_QUERY_INTF                    16
+#define IPA_IOCTL_QUERY_INTF_TX_PROPS           17
+#define IPA_IOCTL_QUERY_INTF_RX_PROPS           18
+#define IPA_IOCTL_GET_HDR                       19
+#define IPA_IOCTL_PUT_HDR                       20
+#define IPA_IOCTL_SET_FLT                       21
+#define IPA_IOCTL_ALLOC_NAT_MEM                 22
+#define IPA_IOCTL_V4_INIT_NAT                   23
+#define IPA_IOCTL_TABLE_DMA_CMD                 24
+#define IPA_IOCTL_NAT_DMA                       IPA_IOCTL_TABLE_DMA_CMD
+#define IPA_IOCTL_INIT_IPV6CT_TABLE             25
+#define IPA_IOCTL_V4_DEL_NAT                    26
+#define IPA_IOCTL_PULL_MSG                      27
+#define IPA_IOCTL_GET_NAT_OFFSET                28
+#define IPA_IOCTL_RM_ADD_DEPENDENCY             29
+#define IPA_IOCTL_RM_DEL_DEPENDENCY             30
+#define IPA_IOCTL_GENERATE_FLT_EQ               31
+#define IPA_IOCTL_QUERY_INTF_EXT_PROPS          32
+#define IPA_IOCTL_QUERY_EP_MAPPING              33
+#define IPA_IOCTL_QUERY_RT_TBL_INDEX            34
+#define IPA_IOCTL_WRITE_QMAPID                  35
+#define IPA_IOCTL_MDFY_FLT_RULE                 36
+#define IPA_IOCTL_NOTIFY_WAN_UPSTREAM_ROUTE_ADD 37
+#define IPA_IOCTL_NOTIFY_WAN_UPSTREAM_ROUTE_DEL 38
+#define IPA_IOCTL_NOTIFY_WAN_EMBMS_CONNECTED    39
+#define IPA_IOCTL_ADD_HDR_PROC_CTX              40
+#define IPA_IOCTL_DEL_HDR_PROC_CTX              41
+#define IPA_IOCTL_MDFY_RT_RULE                  42
+#define IPA_IOCTL_ADD_RT_RULE_AFTER             43
+#define IPA_IOCTL_ADD_FLT_RULE_AFTER            44
+#define IPA_IOCTL_GET_HW_VERSION                45
+#define IPA_IOCTL_ADD_RT_RULE_EXT               46
+#define IPA_IOCTL_ADD_VLAN_IFACE                47
+#define IPA_IOCTL_DEL_VLAN_IFACE                48
+#define IPA_IOCTL_ADD_L2TP_VLAN_MAPPING         49
+#define IPA_IOCTL_DEL_L2TP_VLAN_MAPPING         50
+#define IPA_IOCTL_NAT_MODIFY_PDN                51
+#define IPA_IOCTL_ALLOC_NAT_TABLE               52
+#define IPA_IOCTL_ALLOC_IPV6CT_TABLE            53
+#define IPA_IOCTL_DEL_NAT_TABLE                 54
+#define IPA_IOCTL_DEL_IPV6CT_TABLE              55
+#define IPA_IOCTL_MAX                           56
 
 /**
  * max size of the header to be inserted
@@ -142,6 +164,13 @@
 #define IPA_FLT_MAC_DST_ADDR_802_3	(1ul << 20)
 #define IPA_FLT_MAC_ETHER_TYPE		(1ul << 21)
 #define IPA_FLT_MAC_DST_ADDR_L2TP	(1ul << 22)
+#define IPA_FLT_TCP_SYN			(1ul << 23)
+#define IPA_FLT_TCP_SYN_L2TP		(1ul << 24)
+
+/**
+ * maximal number of NAT PDNs in the PDN config table
+ */
+#define IPA_MAX_PDN_NUM 5
 
 /**
  * enum ipa_client_type - names for the various IPA "clients"
@@ -481,6 +510,7 @@ enum ipa_rm_resource_name {
  * @IPA_HW_v3_1: IPA hardware version 3.1
  * @IPA_HW_v3_5: IPA hardware version 3.5
  * @IPA_HW_v3_5_1: IPA hardware version 3.5.1
+ * @IPA_HW_v4_0: IPA hardware version 4.0
  */
 enum ipa_hw_type {
 	IPA_HW_None = 0,
@@ -495,8 +525,11 @@ enum ipa_hw_type {
 	IPA_HW_v3_1 = 11,
 	IPA_HW_v3_5 = 12,
 	IPA_HW_v3_5_1 = 13,
-	IPA_HW_MAX
+	IPA_HW_v4_0 = 14,
 };
+#define IPA_HW_MAX (IPA_HW_v4_0 + 1)
+
+#define IPA_HW_v4_0 IPA_HW_v4_0
 
 /**
  * struct ipa_rule_attrib - attributes of a routing/filtering
@@ -697,6 +730,11 @@ struct ipa_ipfltri_rule_eq {
  *  consecutive packets
  * @rule_id: rule_id to be assigned to the filter rule. In case client specifies
  *  rule_id as 0 the driver will assign a new rule_id
+ * @set_metadata: bool switch. should metadata replacement at the NAT block
+ *  take place?
+ * @pdn_idx: if action is "pass to source\destination NAT" then a comparison
+ * against the PDN index in the matching PDN entry will take place as an
+ * additional condition for NAT hit.
  */
 struct ipa_flt_rule {
 	uint8_t retain_hdr;
@@ -710,6 +748,8 @@ struct ipa_flt_rule {
 	uint8_t max_prio;
 	uint8_t hashable;
 	uint16_t rule_id;
+	uint8_t set_metadata;
+	uint8_t pdn_idx;
 };
 
 /**
@@ -830,22 +870,37 @@ struct ipa_l2tp_header_add_procparams {
  * @hdr_len_remove: Specifies how much of the header needs to
 		be removed in bytes
  * @eth_hdr_retained: Specifies if Ethernet header is retained or not
+ * @hdr_ofst_pkt_size_valid: Specifies if the Header offset is valid
+ * @hdr_ofst_pkt_size: If hdr_ofst_pkt_size_valid =1, this indicates where the
+		packet size field (2bytes) resides
+ * @hdr_endianness: 0:little endian, 1:big endian
  */
 struct ipa_l2tp_header_remove_procparams {
 	uint32_t hdr_len_remove:8;
 	uint32_t eth_hdr_retained:1;
-	uint32_t reserved:23;
+	/* Following fields are valid if eth_hdr_retained =1 ( bridge mode) */
+	uint32_t hdr_ofst_pkt_size_valid:1;
+	uint32_t hdr_ofst_pkt_size:6;
+	uint32_t hdr_endianness:1;
+	uint32_t reserved:15;
 };
 
 /**
- * union ipa_l2tp_hdr_proc_ctx_params -
+ * struct ipa_l2tp_hdr_proc_ctx_params -
  * @hdr_add_param: parameters for header add
  * @hdr_remove_param: parameters for header remove
+ * @is_dst_pipe_valid: if dst pipe is valid
+ * @dst_pipe: destination pipe
  */
-union ipa_l2tp_hdr_proc_ctx_params {
+struct ipa_l2tp_hdr_proc_ctx_params {
 	struct ipa_l2tp_header_add_procparams hdr_add_param;
 	struct ipa_l2tp_header_remove_procparams hdr_remove_param;
+	uint8_t is_dst_pipe_valid;
+	enum ipa_client_type dst_pipe;
 };
+
+#define L2TP_USER_SPACE_SPECIFY_DST_PIPE
+
 /**
  * struct ipa_hdr_proc_ctx_add - processing context descriptor includes
  * in and out parameters
@@ -862,7 +917,7 @@ struct ipa_hdr_proc_ctx_add {
 	uint32_t hdr_hdl;
 	uint32_t proc_ctx_hdl;
 	int status;
-	union ipa_l2tp_hdr_proc_ctx_params l2tp_params;
+	struct ipa_l2tp_hdr_proc_ctx_params l2tp_params;
 };
 
 #define IPA_L2TP_HDR_PROC_SUPPORT
@@ -1405,15 +1460,26 @@ struct ipa_ioc_nat_alloc_mem {
 };
 
 /**
- * struct ipa_ioc_v4_nat_init - nat table initialization
- * parameters
+ * struct ipa_ioc_nat_ipv6ct_table_alloc - NAT/IPv6CT table memory allocation
+ * properties
+ * @size: input parameter, size of table in bytes
+ * @offset: output parameter, offset into page in case of system memory
+ */
+struct ipa_ioc_nat_ipv6ct_table_alloc {
+	size_t size;
+	off_t offset;
+};
+
+/**
+ * struct ipa_ioc_v4_nat_init - nat table initialization parameters
  * @tbl_index: input parameter, index of the table
  * @ipv4_rules_offset: input parameter, ipv4 rules address offset
  * @expn_rules_offset: input parameter, ipv4 expansion rules address offset
  * @index_offset: input parameter, index rules offset
  * @index_expn_offset: input parameter, index expansion rules offset
- * @table_entries: input parameter, ipv4 rules table size in entries
- * @expn_table_entries: input parameter, ipv4 expansion rules table size
+ * @table_entries: input parameter, ipv4 rules table number of entries
+ * @expn_table_entries: input parameter, ipv4 expansion rules table number of
+ *                      entries
  * @ip_addr: input parameter, public ip address
  */
 struct ipa_ioc_v4_nat_init {
@@ -1430,6 +1496,23 @@ struct ipa_ioc_v4_nat_init {
 };
 
 /**
+ * struct ipa_ioc_ipv6ct_init - IPv6CT table initialization parameters
+ * @tbl_index: input parameter, index of the table
+ * @base_table_offset: input parameter, IPv6CT base table address offset
+ * @expn_table_offset: input parameter, IPv6CT expansion table address offset
+ * @table_entries: input parameter, IPv6CT table number of entries
+ * @expn_table_entries: input parameter, IPv6CT expansion table number of
+ *                      entries
+ */
+struct ipa_ioc_ipv6ct_init {
+	uint8_t tbl_index;
+	uint32_t base_table_offset;
+	uint32_t expn_table_offset;
+	uint16_t table_entries;
+	uint16_t expn_table_entries;
+};
+
+/**
  * struct ipa_ioc_v4_nat_del - nat table delete parameter
  * @table_index: input parameter, index of the table
  * @public_ip_addr: input parameter, public ip address
@@ -1440,7 +1523,15 @@ struct ipa_ioc_v4_nat_del {
 };
 
 /**
- * struct ipa_ioc_nat_dma_one - nat dma command parameter
+ * struct ipa_ioc_nat_ipv6ct_table_del - NAT/IPv6CT table delete parameter
+ * @table_index: input parameter, index of the table
+ */
+struct ipa_ioc_nat_ipv6ct_table_del {
+	uint8_t table_index;
+};
+
+/**
+ * struct ipa_ioc_nat_dma_one - nat/ipv6ct dma command parameter
  * @table_index: input parameter, index of the table
  * @base_addr:	type of table, from which the base address of the table
  *		can be inferred
@@ -1457,7 +1548,7 @@ struct ipa_ioc_nat_dma_one {
 };
 
 /**
- * struct ipa_ioc_nat_dma_cmd - To hold multiple nat dma commands
+ * struct ipa_ioc_nat_dma_cmd - To hold multiple nat/ipv6ct dma commands
  * @entries: number of dma commands in use
  * @dma: data pointer to the dma commands
  */
@@ -1489,6 +1580,20 @@ struct ipa_ioc_l2tp_vlan_mapping_info {
 	char l2tp_iface_name[IPA_RESOURCE_NAME_MAX];
 	uint8_t l2tp_session_id;
 	char vlan_iface_name[IPA_RESOURCE_NAME_MAX];
+};
+
+/**
+ * struct ipa_ioc_nat_pdn_entry - PDN entry modification data
+ * @pdn_index: index of the entry in the PDN config table to be changed
+ * @public_ip: PDN's public ip
+ * @src_metadata: PDN's source NAT metadata for metadata replacement
+ * @dst_metadata: PDN's destination NAT metadata for metadata replacement
+ */
+struct ipa_ioc_nat_pdn_entry {
+	uint8_t pdn_index;
+	uint32_t public_ip;
+	uint32_t src_metadata;
+	uint32_t dst_metadata;
 };
 
 /**
@@ -1750,18 +1855,39 @@ struct ipa_tether_device_info {
 #define IPA_IOC_ALLOC_NAT_MEM _IOWR(IPA_IOC_MAGIC, \
 				IPA_IOCTL_ALLOC_NAT_MEM, \
 				struct ipa_ioc_nat_alloc_mem *)
+#define IPA_IOC_ALLOC_NAT_TABLE _IOWR(IPA_IOC_MAGIC, \
+				IPA_IOCTL_ALLOC_NAT_TABLE, \
+				struct ipa_ioc_nat_ipv6ct_table_alloc *)
+#define IPA_IOC_ALLOC_IPV6CT_TABLE _IOWR(IPA_IOC_MAGIC, \
+				IPA_IOCTL_ALLOC_IPV6CT_TABLE, \
+				struct ipa_ioc_nat_ipv6ct_table_alloc *)
 #define IPA_IOC_V4_INIT_NAT _IOWR(IPA_IOC_MAGIC, \
 				IPA_IOCTL_V4_INIT_NAT, \
 				struct ipa_ioc_v4_nat_init *)
+#define IPA_IOC_INIT_IPV6CT_TABLE _IOWR(IPA_IOC_MAGIC, \
+				IPA_IOCTL_INIT_IPV6CT_TABLE, \
+				struct ipa_ioc_ipv6ct_init *)
 #define IPA_IOC_NAT_DMA _IOWR(IPA_IOC_MAGIC, \
 				IPA_IOCTL_NAT_DMA, \
+				struct ipa_ioc_nat_dma_cmd *)
+#define IPA_IOC_TABLE_DMA_CMD _IOWR(IPA_IOC_MAGIC, \
+				IPA_IOCTL_TABLE_DMA_CMD, \
 				struct ipa_ioc_nat_dma_cmd *)
 #define IPA_IOC_V4_DEL_NAT _IOWR(IPA_IOC_MAGIC, \
 				IPA_IOCTL_V4_DEL_NAT, \
 				struct ipa_ioc_v4_nat_del *)
+#define IPA_IOC_DEL_NAT_TABLE _IOWR(IPA_IOC_MAGIC, \
+				IPA_IOCTL_DEL_NAT_TABLE, \
+				struct ipa_ioc_nat_ipv6ct_table_del *)
+#define IPA_IOC_DEL_IPV6CT_TABLE _IOWR(IPA_IOC_MAGIC, \
+				IPA_IOCTL_DEL_IPV6CT_TABLE, \
+				struct ipa_ioc_nat_ipv6ct_table_del *)
 #define IPA_IOC_GET_NAT_OFFSET _IOWR(IPA_IOC_MAGIC, \
 				IPA_IOCTL_GET_NAT_OFFSET, \
 				uint32_t *)
+#define IPA_IOC_NAT_MODIFY_PDN _IOWR(IPA_IOC_MAGIC, \
+				IPA_IOCTL_NAT_MODIFY_PDN, \
+				struct ipa_ioc_nat_pdn_entry *)
 #define IPA_IOC_SET_FLT _IOW(IPA_IOC_MAGIC, \
 			IPA_IOCTL_SET_FLT, \
 			uint32_t)

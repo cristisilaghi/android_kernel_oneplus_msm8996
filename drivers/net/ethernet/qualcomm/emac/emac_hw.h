@@ -109,6 +109,7 @@ bool emac_hw_read_tx_tstamp(struct emac_hw *hw, struct emac_hwtxtstamp *ts);
 #define DMAW_DLY_CNT_DEF                4
 
 #define MDIO_CLK_25_8                   3
+#define MDIO_CLK_25_10                  4
 #define MDIO_CLK_25_28                  7
 
 #define RXQ0_RSS_HSTYP_IPV6_TCP_EN      0x20
@@ -149,4 +150,5 @@ bool emac_hw_read_tx_tstamp(struct emac_hw *hw, struct emac_hwtxtstamp *ts);
 /* MII_INT_ENABLE/MII_INT_STATUS */
 #define LINK_SUCCESS_INTERRUPT			BIT(10)
 #define LINK_SUCCESS_BX			BIT(7)
+#define WOL_INT				BIT(0)
 #endif /*_EMAC_HW_H_*/

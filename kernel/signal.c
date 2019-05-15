@@ -346,7 +346,7 @@ static bool task_participate_group_stop(struct task_struct *task)
 	 * fresh group stop.  Read comment in do_signal_stop() for details.
 	 */
 	if (!sig->group_stop_count && !(sig->flags & SIGNAL_STOP_STOPPED)) {
-		sig->flags = SIGNAL_STOP_STOPPED;
+		signal_set_stop_flags(sig, SIGNAL_STOP_STOPPED);
 		return true;
 	}
 	return false;
@@ -543,7 +543,8 @@ unblock_all_signals(void)
 	spin_unlock_irqrestore(&current->sighand->siglock, flags);
 }
 
-static void collect_signal(int sig, struct sigpending *list, siginfo_t *info)
+static void collect_signal(int sig, struct sigpending *list, siginfo_t *info,
+			   bool *resched_timer)
 {
 	struct sigqueue *q, *first = NULL;
 
@@ -565,6 +566,12 @@ static void collect_signal(int sig, struct sigpending *list, siginfo_t *info)
 still_pending:
 		list_del_init(&first->list);
 		copy_siginfo(info, &first->info);
+
+		*resched_timer =
+			(first->flags & SIGQUEUE_PREALLOC) &&
+			(info->si_code == SI_TIMER) &&
+			(info->si_sys_private);
+
 		__sigqueue_free(first);
 	} else {
 		/*
@@ -581,7 +588,7 @@ still_pending:
 }
 
 static int __dequeue_signal(struct sigpending *pending, sigset_t *mask,
-			siginfo_t *info)
+			siginfo_t *info, bool *resched_timer)
 {
 	int sig = next_signal(pending, mask);
 
@@ -595,7 +602,7 @@ static int __dequeue_signal(struct sigpending *pending, sigset_t *mask,
 			}
 		}
 
-		collect_signal(sig, pending, info);
+		collect_signal(sig, pending, info, resched_timer);
 	}
 
 	return sig;
@@ -609,15 +616,16 @@ static int __dequeue_signal(struct sigpending *pending, sigset_t *mask,
  */
 int dequeue_signal(struct task_struct *tsk, sigset_t *mask, siginfo_t *info)
 {
+	bool resched_timer = false;
 	int signr;
 
 	/* We only dequeue private signals from ourselves, we don't let
 	 * signalfd steal them
 	 */
-	signr = __dequeue_signal(&tsk->pending, mask, info);
+	signr = __dequeue_signal(&tsk->pending, mask, info, &resched_timer);
 	if (!signr) {
 		signr = __dequeue_signal(&tsk->signal->shared_pending,
-					 mask, info);
+					 mask, info, &resched_timer);
 		/*
 		 * itimer signal ?
 		 *
@@ -662,7 +670,7 @@ int dequeue_signal(struct task_struct *tsk, sigset_t *mask, siginfo_t *info)
 		 */
 		current->jobctl |= JOBCTL_STOP_DEQUEUED;
 	}
-	if ((info->si_code & __SI_MASK) == __SI_TIMER && info->si_sys_private) {
+	if (resched_timer) {
 		/*
 		 * Release the siglock to ensure proper locking order
 		 * of timer locks outside of siglocks.  Note, we leave
@@ -888,7 +896,7 @@ static bool prepare_signal(int sig, struct task_struct *p, bool force)
 			 * will take ->siglock, notice SIGNAL_CLD_MASK, and
 			 * notify its parent. See get_signal_to_deliver().
 			 */
-			signal->flags = why | SIGNAL_STOP_CONTINUED;
+			signal_set_stop_flags(signal, why | SIGNAL_STOP_CONTINUED);
 			signal->group_stop_count = 0;
 			signal->group_exit_code = 0;
 		}
@@ -1020,6 +1028,19 @@ static inline void userns_fixup_signal_uid(struct siginfo *info, struct task_str
 }
 #endif
 
+static int print_key_process_murder __read_mostly = 1;
+
+static bool is_zygote_process(struct task_struct *t)
+{
+	const struct cred *tcred = __task_cred(t);
+
+	if(!strcmp(t->comm, "main") && (tcred->uid.val == 0) && (t->parent != 0 && !strcmp(t->parent->comm,"init")))
+		return true;
+	else
+		return false;
+	return false;
+}
+
 static int __send_signal(int sig, struct siginfo *info, struct task_struct *t,
 			int group, int from_ancestor_ns)
 {
@@ -1031,6 +1052,19 @@ static int __send_signal(int sig, struct siginfo *info, struct task_struct *t,
 	assert_spin_locked(&t->sighand->siglock);
 
 	result = TRACE_SIGNAL_IGNORED;
+
+	if(print_key_process_murder) {
+		if(!strcmp(t->comm, "system_server") ||
+			is_zygote_process(t) ||
+			!strcmp(t->comm, "surfaceflinger") ||
+			!strcmp(t->comm, "servicemanager"))
+		{
+			struct task_struct *tg = current->group_leader;
+			printk("process %d:%s, %d:%s send sig:%d to process %d:%s\n",
+				tg->pid, tg->comm, current->pid, current->comm, sig, t->pid, t->comm);
+		}
+	}
+
 	if (!prepare_signal(sig, t,
 			from_ancestor_ns || (info == SEND_SIG_FORCED)))
 		goto ret;
@@ -1187,7 +1221,18 @@ int do_send_sig_info(int sig, struct siginfo *info, struct task_struct *p,
 {
 	unsigned long flags;
 	int ret = -ESRCH;
-
+        if(sig == SIGKILL){
+            if(p && p->flags & PF_FROZEN){
+                struct task_struct *child = p;
+                rcu_read_lock();
+                do{
+                    child = next_thread(child);
+                    child->kill_flag = 1;
+                    __thaw_task(child);
+                }while(child !=p);
+                rcu_read_unlock();
+            }
+        }
 	if (lock_task_sighand(p, &flags)) {
 		ret = send_signal(sig, info, p, group);
 		unlock_task_sighand(p, &flags);
@@ -2887,6 +2932,7 @@ SYSCALL_DEFINE4(rt_sigtimedwait, const sigset_t __user *, uthese,
 SYSCALL_DEFINE2(kill, pid_t, pid, int, sig)
 {
 	struct siginfo info;
+	struct task_struct *p;
 
 	info.si_signo = sig;
 	info.si_errno = 0;
@@ -2894,6 +2940,11 @@ SYSCALL_DEFINE2(kill, pid_t, pid, int, sig)
 	info.si_pid = task_tgid_vnr(current);
 	info.si_uid = from_kuid_munged(current_user_ns(), current_uid());
 
+	if (sig == SIGQUIT || sig == SIGSEGV ||  sig == SIGABRT) {
+		p = pid_task(find_vpid(pid), PIDTYPE_PID);
+		if (p)
+			unfreezer_fork(p);
+	}
 	return kill_something_info(sig, &info, pid);
 }
 

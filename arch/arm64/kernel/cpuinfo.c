@@ -19,6 +19,7 @@
 #include <asm/cpu.h>
 #include <asm/cputype.h>
 #include <asm/cpufeature.h>
+#include <asm/system_misc.h>
 
 #include <linux/bitops.h>
 #include <linux/bug.h>
@@ -58,6 +59,7 @@ static const char *hwcap_str[] = {
 	"sha1",
 	"sha2",
 	"crc32",
+	"atomics",
 	NULL
 };
 
@@ -84,7 +86,8 @@ static const char *compat_hwcap_str[] = {
 	"idivt",
 	"vfpd32",
 	"lpae",
-	"evtstrm"
+	"evtstrm",
+	NULL
 };
 
 static const char *compat_hwcap2_str[] = {
@@ -149,6 +152,11 @@ static int c_show(struct seq_file *m, void *v)
 		seq_printf(m, "CPU part\t: 0x%03x\n", MIDR_PARTNUM(midr));
 		seq_printf(m, "CPU revision\t: %d\n\n", MIDR_REVISION(midr));
 	}
+
+	if (!arch_read_hardware_id)
+		seq_printf(m, "Hardware\t: %s\n", machine_name);
+	else
+		seq_printf(m, "Hardware\t: %s\n", arch_read_hardware_id());
 
 	return 0;
 }

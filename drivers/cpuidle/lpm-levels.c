@@ -126,6 +126,12 @@ static bool sleep_disabled;
 module_param_named(sleep_disabled,
 	sleep_disabled, bool, S_IRUGO | S_IWUSR | S_IWGRP);
 
+void msm_cpuidle_set_sleep_disable(bool disable)
+{
+       sleep_disabled = disable;
+       pr_info("%s:sleep_disabled=%d\n",__func__,disable);
+}
+
 s32 msm_cpuidle_get_deep_idle_latency(void)
 {
 	return 10;
@@ -445,8 +451,7 @@ static int cpu_power_select(struct cpuidle_device *dev,
 	int best_level = -1;
 	uint32_t latency_us = pm_qos_request_for_cpu(PM_QOS_CPU_DMA_LATENCY,
 							dev->cpu);
-	uint32_t sleep_us =
-		(uint32_t)(ktime_to_us(tick_nohz_get_sleep_length()));
+	s64 sleep_us = ktime_to_us(tick_nohz_get_sleep_length());
 	uint32_t modified_time_us = 0;
 	uint32_t next_event_us = 0;
 	int i;
@@ -456,7 +461,7 @@ static int cpu_power_select(struct cpuidle_device *dev,
 	if (!cpu)
 		return -EINVAL;
 
-	if (sleep_disabled)
+	if (sleep_disabled || sleep_us  < 0)
 		return 0;
 
 	next_event_us = (uint32_t)(ktime_to_us(get_next_event_time(dev->cpu)));
@@ -464,7 +469,7 @@ static int cpu_power_select(struct cpuidle_device *dev,
 	for (i = 0; i < cpu->nlevels; i++) {
 		struct lpm_cpu_level *level = &cpu->levels[i];
 		struct power_params *pwr_params = &level->pwr;
-		uint32_t next_wakeup_us = sleep_us;
+		uint32_t next_wakeup_us = (uint32_t)sleep_us;
 		enum msm_pm_sleep_mode mode = level->mode;
 		bool allow;
 

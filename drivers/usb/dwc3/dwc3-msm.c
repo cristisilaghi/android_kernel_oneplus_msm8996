@@ -87,6 +87,8 @@ MODULE_PARM_DESC(dcp_max_current, "max current drawn for DCP charger");
 
 /* XHCI registers */
 #define USB3_HCSPARAMS1		(0x4)
+#define USB3_HCCPARAMS2		(0x1c)
+#define HCC_CTC(p)		((p) & (1 << 3))
 #define USB3_PORTSC		(0x420)
 
 /**
@@ -258,6 +260,7 @@ struct dwc3_msm {
 	bool			no_wakeup_src_in_hostmode;
 	bool			host_only_mode;
 	bool			psy_not_used;
+	bool			xhci_ss_compliance_enable;
 
 	int  pwr_event_irq;
 	atomic_t                in_p3;
@@ -269,6 +272,53 @@ struct dwc3_msm {
 	struct delayed_work     perf_vote_work;
 	enum dwc3_perf_mode	curr_mode;
 };
+
+static RAW_NOTIFIER_HEAD(otg_switch_chain);
+int otg_switch = 0;
+struct dwc3_msm *opmdwc;
+
+static int call_otg_switch_notifiers(unsigned long val, void *v)
+{
+	return raw_notifier_call_chain(&otg_switch_chain,val,v);
+}
+
+int otg_switch_register_client(struct notifier_block *nb)
+{
+	int ret;
+	ret = raw_notifier_chain_register(&otg_switch_chain, nb);
+	if(ret)
+		pr_err("%s:notifier chain register fail!\n",__func__);
+
+	return 0;
+}
+
+EXPORT_SYMBOL(otg_switch_register_client);
+
+int otg_switch_unregister_client(struct notifier_block *nb)
+{
+	int ret;
+	ret = raw_notifier_chain_unregister(&otg_switch_chain, nb);
+	if(ret)
+		pr_err("%s:notifier chain unregister fail!\n",__func__);
+
+	return 0;
+}
+
+EXPORT_SYMBOL(otg_switch_unregister_client);
+
+
+static  int oem_test_id(int nr, const volatile unsigned long *addr, enum usb_otg_state otg_state)
+{
+	int ret = 0;
+
+	if (0 == otg_switch) {
+		ret = 1;
+	} else {
+		ret = test_bit(nr, addr);
+	}
+	printk("oem_test_id ret:%d, otg_switch:%d, otg_state:%d\n", ret, otg_switch, otg_state);
+	return ret;
+}
 
 #define USB_HSPHY_3P3_VOL_MIN		3050000 /* uV */
 #define USB_HSPHY_3P3_VOL_MAX		3300000 /* uV */
@@ -1163,7 +1213,8 @@ static void gsi_configure_ep(struct usb_ep *ep, struct usb_gsi_request *request)
 	struct dwc3_gadget_ep_cmd_params params;
 	const struct usb_endpoint_descriptor *desc = ep->desc;
 	const struct usb_ss_ep_comp_descriptor *comp_desc = ep->comp_desc;
-	u32			reg;
+	u32 reg;
+	int ret;
 
 	memset(&params, 0x00, sizeof(params));
 
@@ -1212,6 +1263,10 @@ static void gsi_configure_ep(struct usb_ep *ep, struct usb_gsi_request *request)
 
 	/* Set XferRsc Index for GSI EP */
 	if (!(dep->flags & DWC3_EP_ENABLED)) {
+		ret = dwc3_gadget_resize_tx_fifos(dwc, dep);
+		if (ret)
+			return;
+
 		memset(&params, 0x00, sizeof(params));
 		params.param0 = DWC3_DEPXFERCFG_NUM_XFER_RES(1);
 		dwc3_send_gadget_ep_cmd(dwc, dep->number,
@@ -2307,7 +2362,8 @@ static void dwc3_ext_event_notify(struct dwc3_msm *mdwc)
 	if (mdwc->init)
 		flush_delayed_work(&mdwc->sm_work);
 
-	if (mdwc->id_state == DWC3_ID_FLOAT) {
+	if (mdwc->id_state == DWC3_ID_FLOAT || otg_switch == 0) {
+
 		dbg_event(0xFF, "ID set", 0);
 		set_bit(ID, &mdwc->inputs);
 	} else {
@@ -2482,6 +2538,8 @@ static int dwc3_msm_power_get_property_usb(struct power_supply *psy,
 								usb_psy);
 	switch (psp) {
 	case POWER_SUPPLY_PROP_VOLTAGE_MAX:
+		if (mdwc->vbus_active && !mdwc->voltage_max)
+			mdwc->voltage_max = 5000000; /* default value */
 		val->intval = mdwc->voltage_max;
 		break;
 	case POWER_SUPPLY_PROP_CURRENT_MAX:
@@ -2614,6 +2672,9 @@ static int dwc3_msm_power_set_property_usb(struct power_supply *psy,
 		case POWER_SUPPLY_TYPE_USB_DCP:
 			mdwc->chg_type = DWC3_DCP_CHARGER;
 			break;
+		case POWER_SUPPLY_TYPE_DASH:
+			mdwc->chg_type = DWC3_DCP_CHARGER;
+			break;
 		case POWER_SUPPLY_TYPE_USB_HVDCP:
 			mdwc->chg_type = DWC3_DCP_CHARGER;
 			dwc3_msm_gadget_vbus_draw(mdwc, hvdcp_max_current);
@@ -2668,6 +2729,7 @@ dwc3_msm_property_is_writeable(struct power_supply *psy,
 static char *dwc3_msm_pm_power_supplied_to[] = {
 	"battery",
 	"bms",
+	"bcl",
 };
 
 static enum power_supply_property dwc3_msm_pm_power_props_usb[] = {
@@ -2816,6 +2878,50 @@ static int dwc3_msm_get_clk_gdsc(struct dwc3_msm *mdwc)
 	return 0;
 }
 
+
+static int set_otg_switch(const char *val, struct kernel_param *kp)
+{
+	sscanf(val, "%d", &otg_switch);
+
+	if (!strncasecmp(val, "0", 1)) {
+	       printk("OTG: disable! Current id_stat:%d \n", opmdwc->id_state);
+			if(opmdwc->id_state == DWC3_ID_GROUND)/*If OTG is connected, need to send notify.*/
+				dwc3_ext_event_notify(opmdwc);
+			call_otg_switch_notifiers(0,NULL);
+	}else if (!strncasecmp(val, "1", 1)){
+		printk("OTG: enable! Current id_stat:%d \n", opmdwc->id_state);
+		if(opmdwc->id_state == DWC3_ID_GROUND)/*If OTG is connected, need to send notify.*/
+			dwc3_ext_event_notify(opmdwc);
+		call_otg_switch_notifiers(1,NULL);
+	}
+	printk("OTG:write the otg switch to :%d\n",otg_switch);
+	return 0;
+}
+
+static int get_otg_switch(char *buffer, struct kernel_param *kp)
+{
+	int cnt = 0;
+
+	cnt = sprintf(buffer, "%d", otg_switch);
+	printk("OTG: the otg switch is:%d\n",otg_switch);
+
+	return cnt;
+}
+
+module_param_call(otg_switch, set_otg_switch, get_otg_switch, NULL, 0644);
+
+static int get_otg_state(char *buffer, struct kernel_param *kp)
+{
+	int cnt = 0;
+
+	cnt = sprintf(buffer, "%d", !opmdwc->id_state);
+	printk("OTG: the otg status is:%d\n",!opmdwc->id_state);
+
+	return cnt;
+}
+
+module_param_call(otg_state, NULL, get_otg_state, NULL, 0644);
+
 static ssize_t mode_show(struct device *dev, struct device_attribute *attr,
 		char *buf)
 {
@@ -2852,6 +2958,35 @@ static ssize_t mode_store(struct device *dev, struct device_attribute *attr,
 }
 
 static DEVICE_ATTR_RW(mode);
+
+static ssize_t xhci_link_compliance_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct dwc3_msm *mdwc = dev_get_drvdata(dev);
+
+	if (mdwc->xhci_ss_compliance_enable)
+		return snprintf(buf, PAGE_SIZE, "y\n");
+	else
+		return snprintf(buf, PAGE_SIZE, "n\n");
+}
+
+static ssize_t xhci_link_compliance_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct dwc3_msm *mdwc = dev_get_drvdata(dev);
+	bool value;
+	int ret;
+
+	ret = strtobool(buf, &value);
+	if (!ret) {
+		mdwc->xhci_ss_compliance_enable = value;
+		return count;
+	}
+
+	return ret;
+}
+
+static DEVICE_ATTR_RW(xhci_link_compliance);
 
 static int dwc3_msm_probe(struct platform_device *pdev)
 {
@@ -3238,15 +3373,20 @@ static int dwc3_msm_probe(struct platform_device *pdev)
 		enable_irq_wake(mdwc->pmic_id_irq);
 	}
 
-	if (dwc->is_drd)
+	if (dwc->is_drd) {
 		device_create_file(&pdev->dev, &dev_attr_mode);
+		device_create_file(&pdev->dev, &dev_attr_xhci_link_compliance);
+	}
 
 	if (!dwc->is_drd && host_mode) {
 		dev_dbg(&pdev->dev, "DWC3 in host only mode\n");
 		mdwc->host_only_mode = true;
 		mdwc->id_state = DWC3_ID_GROUND;
+		device_create_file(&pdev->dev, &dev_attr_xhci_link_compliance);
 		dwc3_ext_event_notify(mdwc);
 	}
+
+	opmdwc = mdwc;
 
 	/* If the controller is in DRD mode and USB power supply
 	 * is not used make the default mode of contoller as HOST
@@ -3283,8 +3423,12 @@ static int dwc3_msm_remove(struct platform_device *pdev)
 	struct dwc3 *dwc = platform_get_drvdata(mdwc->dwc3);
 	int ret_pm;
 
-	if (dwc->is_drd)
+	if (dwc->is_drd) {
 		device_remove_file(&pdev->dev, &dev_attr_mode);
+		device_remove_file(&pdev->dev, &dev_attr_xhci_link_compliance);
+	} else if (mdwc->host_only_mode) {
+		device_remove_file(&pdev->dev, &dev_attr_xhci_link_compliance);
+	}
 
 	if (cpu_to_affin)
 		unregister_cpu_notifier(&mdwc->dwc3_cpu_notifier);
@@ -3539,6 +3683,25 @@ static int dwc3_otg_start_host(struct dwc3_msm *mdwc, int on)
 			dbg_event(0xFF, "pdeverr psync",
 				atomic_read(&mdwc->dev->power.usage_count));
 			return ret;
+		}
+
+		/*
+		 * If the Compliance Transition Capability(CTC) flag of
+		 * HCCPARAMS2 register is set and xhci_link_compliance sysfs
+		 * param has been enabled by the user for the SuperSpeed host
+		 * controller, then write 10 (Link in Compliance Mode State)
+		 * onto the Port Link State(PLS) field of the PORTSC register
+		 * for 3.0 host controller which is at an offset of USB3_PORTSC
+		 * + 0x10 from the DWC3 base address. Also, disable the runtime
+		 * PM of 3.0 root hub (root hub of shared_hcd of xhci device)
+		 */
+		if (HCC_CTC(dwc3_msm_read_reg(mdwc->base, USB3_HCCPARAMS2))
+				&& mdwc->xhci_ss_compliance_enable
+				&& dwc->maximum_speed == USB_SPEED_SUPER) {
+			dwc3_msm_write_reg(mdwc->base, USB3_PORTSC + 0x10,
+					0x10340);
+			pm_runtime_disable(&hcd_to_xhci(platform_get_drvdata(
+				dwc->xhci))->shared_hcd->self.root_hub->dev);
 		}
 
 		/*
@@ -3930,7 +4093,8 @@ static void dwc3_msm_otg_sm_work(struct work_struct *w)
 		break;
 
 	case OTG_STATE_B_IDLE:
-		if (!test_bit(ID, &mdwc->inputs)) {
+		if (!oem_test_id(ID, &mdwc->inputs, mdwc->otg_state)) {
+
 			dbg_event(0xFF, "!id", 0);
 			mdwc->otg_state = OTG_STATE_A_IDLE;
 			work = 1;
@@ -3989,7 +4153,8 @@ static void dwc3_msm_otg_sm_work(struct work_struct *w)
 
 	case OTG_STATE_B_PERIPHERAL:
 		if (!test_bit(B_SESS_VLD, &mdwc->inputs) ||
-				!test_bit(ID, &mdwc->inputs)) {
+				!oem_test_id(ID, &mdwc->inputs, mdwc->otg_state)) {
+
 			dbg_event(0xFF, "!id || !bsv", 0);
 			mdwc->otg_state = OTG_STATE_B_IDLE;
 			dwc3_otg_start_peripheral(mdwc, 0);
@@ -4043,7 +4208,8 @@ static void dwc3_msm_otg_sm_work(struct work_struct *w)
 
 	case OTG_STATE_A_IDLE:
 		/* Switch to A-Device*/
-		if (test_bit(ID, &mdwc->inputs)) {
+		if (oem_test_id(ID, &mdwc->inputs, mdwc->otg_state)) {
+
 			dbg_event(0xFF, "id", 0);
 			mdwc->otg_state = OTG_STATE_B_IDLE;
 			mdwc->vbus_retry_count = 0;
@@ -4075,8 +4241,9 @@ static void dwc3_msm_otg_sm_work(struct work_struct *w)
 		break;
 
 	case OTG_STATE_A_HOST:
-		if (test_bit(ID, &mdwc->inputs) || mdwc->hc_died
+		if (oem_test_id(ID, &mdwc->inputs, mdwc->otg_state) || mdwc->hc_died
 				|| mdwc->stop_host) {
+
 			dbg_event(0xFF, "id || hc_died || stop_host", 0);
 			dev_dbg(mdwc->dev, "%s state id || hc_died\n", state);
 			dwc3_otg_start_host(mdwc, 0);

@@ -357,7 +357,7 @@ static struct task_struct *dup_task_struct(struct task_struct *orig)
 	set_task_stack_end_magic(tsk);
 
 #ifdef CONFIG_CC_STACKPROTECTOR
-	tsk->stack_canary = get_random_int();
+	tsk->stack_canary = get_random_long();
 #endif
 
 	/*
@@ -370,6 +370,12 @@ static struct task_struct *dup_task_struct(struct task_struct *orig)
 #endif
 	tsk->splice_pipe = NULL;
 	tsk->task_frag.page = NULL;
+
+    tsk->utask_tag = 0;
+    tsk->utask_tag_base = 0;
+    tsk->etask_claim = 0;
+    tsk->claim_cpu = -1;
+    tsk->utask_slave = 0;
 
 	account_kernel_stack(ti, 1);
 
@@ -759,8 +765,7 @@ struct mm_struct *mm_access(struct task_struct *task, unsigned int mode)
 
 	mm = get_task_mm(task);
 	if (mm && mm != current->mm &&
-			!ptrace_may_access(task, mode) &&
-			!capable(CAP_SYS_RESOURCE)) {
+			!ptrace_may_access(task, mode)) {
 		mmput(mm);
 		mm = ERR_PTR(-EACCES);
 	}

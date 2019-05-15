@@ -593,15 +593,12 @@ static int pci_raw_set_power_state(struct pci_dev *dev, pci_power_t state)
 		break;
 	}
 
-	/* enter specified state */
-	pci_write_config_word(dev, dev->pm_cap + PCI_PM_CTRL, pmcsr);
-
-	/* Mandatory power management transition delays */
-	/* see PCI PM 1.1 5.6.1 table 18 */
-	if (state == PCI_D3hot || dev->current_state == PCI_D3hot)
-		pci_dev_d3_sleep(dev);
-	else if (state == PCI_D2 || dev->current_state == PCI_D2)
+    if ((pci_write_config_word(dev, dev->pm_cap + PCI_PM_CTRL, pmcsr) != PCIBIOS_DEVICE_NOT_FOUND) &&
+        ( state == PCI_D3hot || dev->current_state == PCI_D3hot)){ //If config space read fail, bypass the D3 delay.
+        pci_dev_d3_sleep(dev);
+	}else if (state == PCI_D2 || dev->current_state == PCI_D2){
 		udelay(PCI_PM_D2_DELAY);
+	}
 
 	pci_read_config_word(dev, dev->pm_cap + PCI_PM_CTRL, &pmcsr);
 	dev->current_state = (pmcsr & PCI_PM_CTRL_STATE_MASK);
@@ -1686,8 +1683,8 @@ static void pci_pme_list_scan(struct work_struct *work)
 		}
 	}
 	if (!list_empty(&pci_pme_list))
-		schedule_delayed_work(&pci_pme_work,
-				      msecs_to_jiffies(PME_TIMEOUT));
+		queue_delayed_work(system_freezable_wq, &pci_pme_work,
+				   msecs_to_jiffies(PME_TIMEOUT));
 	mutex_unlock(&pci_pme_list_mutex);
 }
 
@@ -1747,8 +1744,9 @@ void pci_pme_active(struct pci_dev *dev, bool enable)
 			mutex_lock(&pci_pme_list_mutex);
 			list_add(&pme_dev->list, &pci_pme_list);
 			if (list_is_singular(&pci_pme_list))
-				schedule_delayed_work(&pci_pme_work,
-						      msecs_to_jiffies(PME_TIMEOUT));
+				queue_delayed_work(system_freezable_wq,
+						   &pci_pme_work,
+						   msecs_to_jiffies(PME_TIMEOUT));
 			mutex_unlock(&pci_pme_list_mutex);
 		} else {
 			mutex_lock(&pci_pme_list_mutex);
